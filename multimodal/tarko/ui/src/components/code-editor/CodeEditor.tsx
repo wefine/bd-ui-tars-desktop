@@ -1,8 +1,8 @@
-import React, { useEffect, useRef } from 'react';
-import hljs from 'highlight.js';
+import React from 'react';
 import { CodeEditorHeader } from './CodeEditorHeader';
 import { CodeEditorStatusBar } from './CodeEditorStatusBar';
-import { getDisplayFileName, getFileExtension } from '../../utils/file';
+import { CodeHighlight } from './CodeHighlight';
+import { getDisplayFileName } from '../../utils/file';
 import './CodeEditor.css';
 
 interface CodeEditorProps {
@@ -11,6 +11,8 @@ interface CodeEditorProps {
   filePath?: string;
   fileSize?: string;
   readOnly?: boolean;
+  showHeader?: boolean;
+  showStatusBar?: boolean;
   showLineNumbers?: boolean;
   maxHeight?: string;
   className?: string;
@@ -23,7 +25,9 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
   filePath,
   fileSize,
   readOnly = true,
+  showHeader = true,
   showLineNumbers = true,
+  showStatusBar = true,
   maxHeight = 'none',
   className = '',
   onCopy,
@@ -32,18 +36,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
     return null;
   }
 
-  const codeRef = useRef<HTMLElement>(null);
-
   const displayFileName = getDisplayFileName(fileName, filePath);
-  const fileExtension = getFileExtension(fileName);
-  const language = fileExtension || 'text';
-
-  useEffect(() => {
-    if (codeRef.current) {
-      codeRef.current.removeAttribute('data-highlighted');
-      hljs.highlightElement(codeRef.current);
-    }
-  }, [code, language]);
 
   const handleCopy = () => {
     navigator.clipboard.writeText(code);
@@ -55,12 +48,14 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
   return (
     <div className={`code-editor-container ${className}`}>
       <div className="code-editor-wrapper">
-        <CodeEditorHeader
-          fileName={displayFileName}
-          filePath={filePath}
-          fileSize={fileSize}
-          onCopy={handleCopy}
-        />
+        {showHeader && (
+          <CodeEditorHeader
+            fileName={displayFileName}
+            filePath={filePath}
+            fileSize={fileSize}
+            onCopy={handleCopy}
+          />
+        )}
 
         <div className="code-editor-content" style={{ maxHeight }}>
           <div className="code-editor-inner">
@@ -76,17 +71,10 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
               </div>
             )}
 
-            <div className="code-editor-code-area">
-              <pre className="code-editor-pre">
-                <code ref={codeRef} className={`language-${language} code-editor-code`}>
-                  {code}
-                </code>
-              </pre>
-            </div>
+            <CodeHighlight code={code} fileName={fileName} />
           </div>
         </div>
-
-        <CodeEditorStatusBar code={code} readOnly={readOnly} />
+        {showStatusBar && <CodeEditorStatusBar code={code} readOnly={readOnly} />}
       </div>
     </div>
   );
