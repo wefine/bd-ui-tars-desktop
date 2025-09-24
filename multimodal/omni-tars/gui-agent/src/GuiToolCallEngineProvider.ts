@@ -3,7 +3,7 @@
  * Provides optimized tool call engine for GUI automation and computer use tasks
  */
 
-import { ToolCallEngineProvider, ToolCallEngineContext } from '@omni-tars/core';
+import { ToolCallEngineProvider, ToolCallEngineContext, AgentMode } from '@omni-tars/core';
 import { GUIAgentToolCallEngine } from './GUIAgentToolCallEngine';
 
 export class GuiToolCallEngineProvider extends ToolCallEngineProvider<GUIAgentToolCallEngine> {
@@ -11,9 +11,16 @@ export class GuiToolCallEngineProvider extends ToolCallEngineProvider<GUIAgentTo
   readonly priority = 90; // High priority for GUI tasks
   readonly description =
     'Tool call engine optimized for GUI automation, computer use, and visual interface interactions';
+  
+  private agentMode: AgentMode;
+
+  constructor(agentMode: AgentMode = 'gui') {
+    super();
+    this.agentMode = agentMode;
+  }
 
   protected createEngine(): GUIAgentToolCallEngine {
-    return new GUIAgentToolCallEngine();
+    return new GUIAgentToolCallEngine(this.agentMode);
   }
 
   canHandle(context: ToolCallEngineContext): boolean {
