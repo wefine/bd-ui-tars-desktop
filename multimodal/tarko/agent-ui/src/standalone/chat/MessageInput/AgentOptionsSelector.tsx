@@ -184,7 +184,17 @@ export const AgentOptionsSelector = forwardRef<AgentOptionsSelectorRef, AgentOpt
 
       const loadOptions = async () => {
         try {
-          const response = await apiService.getSessionRuntimeSettings(activeSessionId);
+          let response: RuntimeSettingsResponse;
+          
+          // Special handling for home page placeholder
+          if (activeSessionId === 'home-placeholder') {
+            // For home page, get only schema without session
+            response = await apiService.getSessionRuntimeSettings();
+          } else {
+            // For real sessions, get schema + current values
+            response = await apiService.getSessionRuntimeSettings(activeSessionId);
+          }
+          
           const schema = response.schema as AgentRuntimeSettingsSchema;
           let currentValues = response.currentValues || {};
 
@@ -254,15 +264,22 @@ export const AgentOptionsSelector = forwardRef<AgentOptionsSelectorRef, AgentOpt
       setLoadingOptions(prev => new Set(prev).add(key));
 
       try {
-        const response = await apiService.updateSessionRuntimeSettings(activeSessionId, newValues);
-        if (response.success && response.sessionInfo?.metadata) {
-          updateSessionMetadata({
-            sessionId: activeSessionId,
-            metadata: response.sessionInfo.metadata,
-          });
+        // Skip server update for home placeholder - only update local state
+        if (activeSessionId === 'home-placeholder') {
+          // For home page, just update local state
+          console.log('Home page agent option updated', { key, value });
+        } else {
+          // For real sessions, update server
+          const response = await apiService.updateSessionRuntimeSettings(activeSessionId, newValues);
+          if (response.success && response.sessionInfo?.metadata) {
+            updateSessionMetadata({
+              sessionId: activeSessionId,
+              metadata: response.sessionInfo.metadata,
+            });
 
-          // Show success feedback briefly
-          console.log('Agent options updated successfully', { key, value });
+            // Show success feedback briefly
+            console.log('Agent options updated successfully', { key, value });
+          }
         }
       } catch (error) {
         console.error('Failed to update runtime settings:', error);
@@ -295,14 +312,21 @@ export const AgentOptionsSelector = forwardRef<AgentOptionsSelectorRef, AgentOpt
       setLoadingOptions(prev => new Set(prev).add(key));
 
       try {
-        const response = await apiService.updateSessionRuntimeSettings(activeSessionId, newValues);
-        if (response.success && response.sessionInfo?.metadata) {
-          updateSessionMetadata({
-            sessionId: activeSessionId,
-            metadata: response.sessionInfo.metadata,
-          });
+        // Skip server update for home placeholder - only update local state
+        if (activeSessionId === 'home-placeholder') {
+          // For home page, just update local state
+          console.log('Home page agent option removed', { key });
+        } else {
+          // For real sessions, update server
+          const response = await apiService.updateSessionRuntimeSettings(activeSessionId, newValues);
+          if (response.success && response.sessionInfo?.metadata) {
+            updateSessionMetadata({
+              sessionId: activeSessionId,
+              metadata: response.sessionInfo.metadata,
+            });
 
-          console.log('Agent option removed successfully', { key });
+            console.log('Agent option removed successfully', { key });
+          }
         }
       } catch (error) {
         console.error('Failed to remove runtime setting:', error);
