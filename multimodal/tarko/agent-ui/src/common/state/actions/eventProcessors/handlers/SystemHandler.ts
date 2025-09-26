@@ -51,6 +51,11 @@ export class EnvironmentInputHandler
   ): void {
     const { get, set } = context;
 
+    // Check if this is the first environment_input event BEFORE adding the current message
+    const existingSessionMessages = get(messagesAtom)[sessionId] || [];
+    const isFirstEnvironmentInput =
+      existingSessionMessages.filter((msg) => msg.role === 'environment').length === 0;
+
     const environmentMessage: Message = {
       id: event.id,
       role: 'environment',
@@ -68,7 +73,7 @@ export class EnvironmentInputHandler
       };
     });
 
-    if (Array.isArray(event.content) && shouldUpdatePanelContent(get, sessionId)) {
+    if (Array.isArray(event.content)) {
       const imageContent = event.content.find(
         (item): item is ChatCompletionContentPartImage =>
           typeof item === 'object' &&
@@ -83,26 +88,44 @@ export class EnvironmentInputHandler
 
       if (imageContent && imageContent.image_url) {
         const currentPanelContent = get(sessionPanelContentAtom);
-        const sessionMessages = get(messagesAtom)[sessionId] || [];
-        
-        // Check if this is the first environment_input event in the session
-        const isFirstEnvironmentInput = sessionMessages.filter(msg => msg.role === 'environment').length === 0;
         const currentSessionPanel = currentPanelContent[sessionId];
 
-        // Always show first environment_input (initialization screenshot) or update existing browser_vision_control panel
-        if (isFirstEnvironmentInput || (currentSessionPanel && currentSessionPanel.type === 'browser_vision_control')) {
+        // Common panel properties
+        const basePanelContent = {
+          title: event.description || 'Environment Screenshot',
+          timestamp: event.timestamp,
+          originalContent: event.content,
+          environmentId: event.id,
+        };
+
+        let panelContent = null;
+
+        if (isFirstEnvironmentInput) {
+          // First environment input: always show as simple image
+          panelContent = {
+            ...basePanelContent,
+            type: 'image',
+            source: imageContent.image_url.url,
+          };
+        } else if (
+          currentSessionPanel?.type === 'browser_vision_control' ||
+          shouldUpdatePanelContent(get, sessionId)
+        ) {
+          // Update existing browser_vision_control panel or create new one
+          panelContent = {
+            ...basePanelContent,
+            type: 'browser_vision_control',
+            source: null,
+            title: event.description || 'Browser Screenshot',
+          };
+        }
+
+        if (panelContent) {
           set(sessionPanelContentAtom, (prev) => ({
             ...prev,
-            [sessionId]: {
-              type: 'browser_vision_control',
-              title: event.description || 'Browser Screenshot',
-              timestamp: event.timestamp,
-              originalContent: event.content,
-              environmentId: event.id,
-            },
+            [sessionId]: panelContent,
           }));
         }
-        // Skip update for other panel types to avoid duplicate Browser Screenshot rendering
       }
     }
   }
