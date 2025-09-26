@@ -2,19 +2,19 @@
  * Copyright (c) 2025 Bytedance, Inc. and its affiliates.
  * SPDX-License-Identifier: Apache-2.0
  */
-import { AgentPlugin, COMPUTER_USE_ENVIRONMENT } from '@omni-tars/core';
+import { AgentMode, AgentPlugin, COMPUTER_USE_ENVIRONMENT } from '@omni-tars/core';
 import { Tool, LLMRequestHookPayload, ChatCompletionContentPart } from '@tarko/agent';
-import { createGUIErrorResponse } from '@tarko/shared-utils';
+import { ConsoleLogger, createGUIErrorResponse, LogLevel } from '@tarko/shared-utils';
 import { Base64ImageParser } from '@agent-infra/media-utils';
 import { ImageCompressor, formatBytes } from '@tarko/shared-media-utils';
-import { setScreenInfo } from './shared';
 import { OperatorManager } from './OperatorManager';
-import { BrowserOperator } from '@gui-agent/operator-browser';
-import { AIOHybridOperator } from '@gui-agent/operator-aio';
 
 interface GuiAgentPluginOption {
   operatorManager: OperatorManager;
+  agentMode?: AgentMode;
 }
+
+const guiLogger = new ConsoleLogger('[O-GUIAgent]', LogLevel.DEBUG);
 
 /**
  * GUI Agent Plugin - handles COMPUTER_USE_ENVIRONMENT for screen interaction
@@ -22,15 +22,23 @@ interface GuiAgentPluginOption {
 export class GuiAgentPlugin extends AgentPlugin {
   readonly name = 'gui-agent';
   readonly environmentSection = COMPUTER_USE_ENVIRONMENT;
+  private agentMode?: AgentMode;
   private operatorManager: OperatorManager;
 
   constructor(option: GuiAgentPluginOption) {
     super();
-
+    this.agentMode = option.agentMode;
     this.operatorManager = option.operatorManager;
+    if (this.agentMode) {
+      guiLogger.info('AgentMode:', JSON.stringify(this.agentMode));
+    }
   }
 
   async initialize(): Promise<void> {
+    if (this.agentMode && this.agentMode.id === 'game') {
+      await this.emitScreenshotEvent();
+    }
+
     this.agent.registerTool(
       new Tool({
         id: 'browser_vision_control',
@@ -38,7 +46,7 @@ export class GuiAgentPlugin extends AgentPlugin {
         parameters: {},
         function: async (input) => {
           try {
-            this.agent.logger.info('browser_vision_control', input);
+            guiLogger.info('browser_vision_control', input);
             const op = await this.operatorManager.getInstance();
             const rawResult = await op?.doExecute({
               rawContent: '',
@@ -46,6 +54,7 @@ export class GuiAgentPlugin extends AgentPlugin {
               actions: input.operator_action,
             });
             if (rawResult?.errorMessage) {
+              guiLogger.error('execute error', rawResult?.errorMessage);
               return createGUIErrorResponse(input.action, rawResult?.errorMessage);
             }
             return {
@@ -56,6 +65,10 @@ export class GuiAgentPlugin extends AgentPlugin {
             };
           } catch (error) {
             // Return error response in GUI Agent format
+            guiLogger.error(
+              'execute error from trycatch',
+              error instanceof Error ? error.message : 'Unknown error',
+            );
             return createGUIErrorResponse(input.action, error);
           }
         },
@@ -78,17 +91,21 @@ export class GuiAgentPlugin extends AgentPlugin {
     toolCall: { toolCallId: string; name: string },
     result: unknown,
   ): Promise<void> {
-    this.agent.logger.info('onAfterToolCall toolCall', JSON.stringify(toolCall));
+    guiLogger.info('onAfterToolCall toolCall', JSON.stringify(toolCall));
 
     if (toolCall.name !== 'browser_vision_control') {
-      this.agent.logger.info('onAfterToolCall: skipping screenshot');
+      guiLogger.info('onAfterToolCall: skipping screenshot');
       return;
     }
 
+    await this.emitScreenshotEvent();
+  }
+
+  private async emitScreenshotEvent(): Promise<void> {
     const operator = await this.operatorManager.getInstance();
     const output = await operator?.doScreenshot();
     if (!output?.base64) {
-      this.agent.logger.error('Failed to get screenshot');
+      guiLogger.error('Failed to get screenshot');
       return;
     }
     const base64Tool = new Base64ImageParser(output.base64);
@@ -105,7 +122,7 @@ export class GuiAgentPlugin extends AgentPlugin {
     const compressedSize = compressedBuffer.byteLength;
     const compressionRatio = (((originalSize - compressedSize) / originalSize) * 100).toFixed(2);
 
-    this.agent.logger.debug(`compression stat: `, {
+    guiLogger.debug(`compression stat: `, {
       originalSize: formatBytes(originalSize),
       compressedSize: formatBytes(compressedSize),
       compressionRatio: `${compressionRatio}% reduction`,
@@ -129,7 +146,7 @@ export class GuiAgentPlugin extends AgentPlugin {
 
     const eventStream = this.agent.getEventStream();
     const events = eventStream.getEvents();
-    this.agent.logger.info('onAfterToolCall events length:', events.length);
+    guiLogger.info('onAfterToolCall events length:', events.length);
 
     const event = eventStream.createEvent('environment_input', {
       description: 'Browser Screenshot',
@@ -140,22 +157,5 @@ export class GuiAgentPlugin extends AgentPlugin {
       },
     });
     eventStream.sendEvent(event);
-    // Extract image dimensions from screenshot
-    const dimensions = base64Tool.getDimensions();
-    if (dimensions) {
-      setScreenInfo({
-        screenWidth: dimensions.width,
-        screenHeight: dimensions.height,
-      });
-    }
-  }
-
-  private findLastMatch<T>(array: T[], callback: (item: T) => boolean) {
-    for (let i = array.length - 1; i >= 0; i--) {
-      if (callback(array[i])) {
-        return array[i];
-      }
-    }
-    return undefined;
   }
 }

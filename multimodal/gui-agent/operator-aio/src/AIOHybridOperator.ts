@@ -14,38 +14,23 @@ import { Operator, ScreenContext } from '@gui-agent/shared/base';
 import { ConsoleLogger, LogLevel } from '@agent-infra/logger';
 import { Base64ImageParser } from '@agent-infra/media-utils';
 
-import { AIOComputer } from './AIOComputer';
+import { AIOComputer, keyNameMap } from './AIOComputer';
 import { AIOBrowser } from './AIOBrowser';
 import type { AIOHybridOptions } from './types';
 
 const defaultLogger = new ConsoleLogger(undefined, LogLevel.DEBUG);
 
-const arrowKeyMap = {
-  arrowup: 'up',
-  arrowdown: 'down',
-  arrowleft: 'left',
-  arrowright: 'right',
-};
-
 export class AIOHybridOperator extends Operator {
-  private static currentInstance: AIOHybridOperator | null = null;
-  public static async create(options: AIOHybridOptions): Promise<AIOHybridOperator> {
-    defaultLogger.info('[AioHybridOperator.create]:', options.baseURL);
-    const instance = new AIOHybridOperator(options);
-    // await instance.initialize(options);
-    this.currentInstance = instance;
-    return instance;
-  }
-
   private options: AIOHybridOptions;
-  private logger: ConsoleLogger;
-  private aioBrowser: AIOBrowser | null = null;
-  private aioComputer: AIOComputer;
+
+  protected logger: ConsoleLogger;
+  protected aioBrowser: AIOBrowser | null = null;
+  protected aioComputer: AIOComputer;
 
   private screenshotWidth = 1280;
   private screenshotHeight = 1024;
 
-  private constructor(options: AIOHybridOptions, logger: ConsoleLogger = defaultLogger) {
+  constructor(options: AIOHybridOptions, logger: ConsoleLogger = defaultLogger) {
     super();
     this.options = options;
     this.logger = logger.spawn('[AIOHybridOperator]');
@@ -184,7 +169,7 @@ export class AIOHybridOperator extends Operator {
         case 'click':
         case 'left_click':
         case 'left_single': {
-          this.handleClick(actionInputs, 'left');
+          await this.handleClick(actionInputs, 'left');
           const { point } = actionInputs;
           startXPercent = (point as Coordinates)?.normalized?.x;
           startYPercent = (point as Coordinates)?.normalized?.y;
@@ -192,7 +177,7 @@ export class AIOHybridOperator extends Operator {
         }
         case 'left_double':
         case 'double_click': {
-          this.handleClick(actionInputs, 'left', 2);
+          await this.handleClick(actionInputs, 'left', 2);
           const { point } = actionInputs;
           startXPercent = (point as Coordinates)?.normalized?.x;
           startYPercent = (point as Coordinates)?.normalized?.y;
@@ -200,14 +185,14 @@ export class AIOHybridOperator extends Operator {
         }
         case 'right_click':
         case 'right_single': {
-          this.handleClick(actionInputs, 'right');
+          await this.handleClick(actionInputs, 'right');
           const { point } = actionInputs;
           startXPercent = (point as Coordinates)?.normalized?.x;
           startYPercent = (point as Coordinates)?.normalized?.y;
           break;
         }
         case 'middle_click': {
-          this.handleClick(actionInputs, 'middle');
+          await this.handleClick(actionInputs, 'middle');
           const { point } = actionInputs;
           startXPercent = (point as Coordinates)?.normalized?.x;
           startYPercent = (point as Coordinates)?.normalized?.y;
@@ -216,7 +201,7 @@ export class AIOHybridOperator extends Operator {
         case 'left_click_drag':
         case 'drag':
         case 'select': {
-          this.handleDrag(actionInputs);
+          await this.handleDrag(actionInputs);
           break;
         }
         case 'type': {
@@ -230,18 +215,26 @@ export class AIOHybridOperator extends Operator {
         }
         case 'hotkey':
         case 'press': {
-          let keyStr = actionInputs?.key || actionInputs?.hotkey;
+          const keyStr = actionInputs?.key || actionInputs?.hotkey;
           if (typeof keyStr !== 'string') {
             throw new Error('key string is required when press or hotkey');
           }
-          keyStr = keyStr.toLowerCase();
-          const keys = (keyStr as string).split(/[\s+]/).filter((k) => k.length > 0);
-          if (keys.length > 1) {
-            await this.aioComputer.hotkey(keys);
+          const lowerKeyStr: string = keyStr.toLowerCase();
+          const keys = lowerKeyStr.split(/\s+/).filter((k) => k.length > 0);
+
+          // Validate and map each key in the hotkey combination
+          const mappedKeys = keys.map((key) => {
+            return keyNameMap[key as keyof typeof keyNameMap] || key;
+          });
+          if (mappedKeys.length === 0) {
+            throw new Error('key string is required when press or hotkey');
+          }
+
+          this.logger.info('Press/hotkey action mappedKeys:', mappedKeys.join('+'));
+          if (mappedKeys.length > 1) {
+            await this.aioComputer.hotkey(mappedKeys);
           } else {
-            // Check if the key can be mapped using arrowKeyMap
-            const mappedKey = arrowKeyMap[keyStr as keyof typeof arrowKeyMap] || keyStr;
-            await this.aioComputer.press(mappedKey);
+            await this.aioComputer.press(mappedKeys[0]);
           }
           break;
         }
@@ -343,9 +336,9 @@ export class AIOHybridOperator extends Operator {
     }
     const { realX: startX, realY: startY } = await this.calculateRealCoords(startPoint);
     const { realX: endX, realY: endY } = await this.calculateRealCoords(endPoint);
-    if (startX > endX || startY > endY) {
-      throw new Error('start point must be top left of end point');
-    }
+    // if (startX > endX || startY > endY) {
+    //   throw new Error('start point must be top left of end point');
+    // }
     // Move to start position, press mouse, drag to end position, release mouse
     await this.aioComputer.moveTo(startX, startY);
     await this.aioComputer.mouseDown();
