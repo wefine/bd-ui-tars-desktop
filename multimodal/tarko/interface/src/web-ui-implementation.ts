@@ -138,17 +138,17 @@ export interface WelcomeCard {
    */
   title: string;
   /**
+   * Card category for grouping
+   */
+  category: string;
+  /**
    * Card prompt content
    */
-  prompt: string;
+  prompt?: string;
   /**
    * Card background image URL
    */
   image?: string;
-  /**
-   * Card category for grouping
-   */
-  category: string;
   /**
    * Agent options to pass when creating session
    */
