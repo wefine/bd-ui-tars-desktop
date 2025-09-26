@@ -12,6 +12,39 @@ interface TerminalRendererProps {
 }
 
 /**
+ * URL regex pattern to detect URLs in text
+ */
+const URL_REGEX = /(https?:\/\/[^\s<>"{}|\\^`\[\]]+)/g;
+
+/**
+ * Convert text with URLs to JSX with clickable links
+ */
+function linkifyText(text: string): React.ReactNode {
+  if (!text || typeof text !== 'string') {
+    return text;
+  }
+
+  const parts = text.split(URL_REGEX);
+  return parts.map((part, index) => {
+    if (URL_REGEX.test(part)) {
+      return (
+        <a
+          key={index}
+          href={part}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-blue-400 hover:text-blue-300 underline cursor-pointer"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {part}
+        </a>
+      );
+    }
+    return part;
+  });
+}
+
+/**
  * Format tool arguments as JSON string
  */
 function formatArguments(args: Record<string, any>): string {
@@ -19,6 +52,57 @@ function formatArguments(args: Record<string, any>): string {
     return '';
   }
   return JSON.stringify(args, null, 2);
+}
+
+/**
+ * Custom CodeHighlight wrapper that makes URLs clickable in JSON
+ */
+function CodeHighlightWithLinks({ code, language }: { code: string; language: string }) {
+  if (language !== 'json') {
+    return <CodeHighlight code={code} language={language} />;
+  }
+
+  // For JSON, render with clickable URLs
+  const renderJsonWithLinks = (jsonString: string) => {
+    const urlRegex = /"(https?:\/\/[^"\s]+)"/g;
+    const parts = jsonString.split(urlRegex);
+    
+    return parts.map((part, index) => {
+      // Check if this part is a URL (every odd index after split)
+      if (index > 0 && index % 2 === 1 && /^https?:\/\//.test(part)) {
+        return (
+          <React.Fragment key={index}>
+            <span className="text-green-400">"</span>
+            <a
+              href={part}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-blue-400 hover:text-blue-300 underline cursor-pointer"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {part}
+            </a>
+            <span className="text-green-400">"</span>
+          </React.Fragment>
+        );
+      }
+      return <span key={index}>{part}</span>;
+    });
+  };
+
+  // Check if the code contains URLs in JSON strings
+  const hasUrls = /"https?:\/\/[^"\s]+"/.test(code);
+  
+  if (!hasUrls) {
+    return <CodeHighlight code={code} language={language} />;
+  }
+
+  // Render with custom URL handling
+  return (
+    <pre className="text-sm bg-transparent text-gray-300 whitespace-pre-wrap break-words font-mono">
+      <code>{renderJsonWithLinks(code)}</code>
+    </pre>
+  );
 }
 
 /**
@@ -139,14 +223,14 @@ export const TerminalRenderer: React.FC<TerminalRendererProps> = ({
               {/* Arguments section */}
               {argumentsJson && (
                 <div className="p-3 pb-0 bg-[#121212] rounded m-3 mb-0 max-h-[40vh] overflow-auto">
-                  <CodeHighlight code={argumentsJson} language="json" />
+                  <CodeHighlightWithLinks code={argumentsJson} language="json" />
                 </div>
               )}
 
               {/* Output section */}
               {output && (
                 <div className="p-3 bg-[#121212] rounded m-3 max-h-[80vh] overflow-auto">
-                  <CodeHighlight code={output} language="json" />
+                  <CodeHighlightWithLinks code={output} language="json" />
                 </div>
               )}
             </div>
