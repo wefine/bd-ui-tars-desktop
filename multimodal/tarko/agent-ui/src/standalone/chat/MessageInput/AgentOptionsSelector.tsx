@@ -12,9 +12,10 @@ import { useReplayMode } from '@/common/hooks/useReplayMode';
 import { useAtomValue } from 'jotai';
 import { isProcessingAtom } from '@/common/state/atoms/ui';
 import { FiPlus, FiCheck, FiChevronRight, FiImage, FiPaperclip, FiLoader } from 'react-icons/fi';
-import { TbBulb, TbSearch, TbBook, TbSettings, TbBrain, TbPhoto, TbBrowser } from 'react-icons/tb';
+import { TbPhoto } from 'react-icons/tb';
 import { Dropdown, DropdownItem, DropdownHeader, DropdownDivider } from '@tarko/ui';
 import { createPortal } from 'react-dom';
+import { getAgentOptionIcon } from './agentIconUtils';
 
 interface ActiveOption {
   key: string;
@@ -185,7 +186,7 @@ export const AgentOptionsSelector = forwardRef<AgentOptionsSelectorRef, AgentOpt
       const loadOptions = async () => {
         try {
           let response: RuntimeSettingsResponse;
-          
+
           // Special handling for home page placeholder
           if (activeSessionId === 'home-placeholder') {
             // For home page, get only schema without session
@@ -194,7 +195,7 @@ export const AgentOptionsSelector = forwardRef<AgentOptionsSelectorRef, AgentOpt
             // For real sessions, get schema + current values
             response = await apiService.getSessionRuntimeSettings(activeSessionId);
           }
-          
+
           const schema = response.schema as AgentRuntimeSettingsSchema;
           let currentValues = response.currentValues || {};
 
@@ -239,7 +240,7 @@ export const AgentOptionsSelector = forwardRef<AgentOptionsSelectorRef, AgentOpt
 
       const { dependsOn, when } = property.visible;
       const dependentValue = currentValues[dependsOn];
-      
+
       // Support both exact match and deep equality for complex values
       return dependentValue === when;
     };
@@ -261,7 +262,7 @@ export const AgentOptionsSelector = forwardRef<AgentOptionsSelectorRef, AgentOpt
 
       const newValues = { ...currentValues, [key]: value };
       setCurrentValues(newValues);
-      setLoadingOptions(prev => new Set(prev).add(key));
+      setLoadingOptions((prev) => new Set(prev).add(key));
 
       try {
         // Skip server update for home placeholder - only update local state
@@ -270,7 +271,10 @@ export const AgentOptionsSelector = forwardRef<AgentOptionsSelectorRef, AgentOpt
           console.log('Home page agent option updated', { key, value });
         } else {
           // For real sessions, update server
-          const response = await apiService.updateSessionRuntimeSettings(activeSessionId, newValues);
+          const response = await apiService.updateSessionRuntimeSettings(
+            activeSessionId,
+            newValues,
+          );
           if (response.success && response.sessionInfo?.metadata) {
             updateSessionMetadata({
               sessionId: activeSessionId,
@@ -288,7 +292,7 @@ export const AgentOptionsSelector = forwardRef<AgentOptionsSelectorRef, AgentOpt
       } finally {
         // Add a small delay to show the loading state
         setTimeout(() => {
-          setLoadingOptions(prev => {
+          setLoadingOptions((prev) => {
             const newSet = new Set(prev);
             newSet.delete(key);
             return newSet;
@@ -309,7 +313,7 @@ export const AgentOptionsSelector = forwardRef<AgentOptionsSelectorRef, AgentOpt
       const newValues = { ...currentValues };
       delete newValues[key]; // Remove the key entirely
       setCurrentValues(newValues);
-      setLoadingOptions(prev => new Set(prev).add(key));
+      setLoadingOptions((prev) => new Set(prev).add(key));
 
       try {
         // Skip server update for home placeholder - only update local state
@@ -318,7 +322,10 @@ export const AgentOptionsSelector = forwardRef<AgentOptionsSelectorRef, AgentOpt
           console.log('Home page agent option removed', { key });
         } else {
           // For real sessions, update server
-          const response = await apiService.updateSessionRuntimeSettings(activeSessionId, newValues);
+          const response = await apiService.updateSessionRuntimeSettings(
+            activeSessionId,
+            newValues,
+          );
           if (response.success && response.sessionInfo?.metadata) {
             updateSessionMetadata({
               sessionId: activeSessionId,
@@ -334,7 +341,7 @@ export const AgentOptionsSelector = forwardRef<AgentOptionsSelectorRef, AgentOpt
         setCurrentValues(currentValues);
       } finally {
         setTimeout(() => {
-          setLoadingOptions(prev => {
+          setLoadingOptions((prev) => {
             const newSet = new Set(prev);
             newSet.delete(key);
             return newSet;
@@ -450,15 +457,7 @@ export const AgentOptionsSelector = forwardRef<AgentOptionsSelectorRef, AgentOpt
     }));
 
     const getOptionIcon = (key: string, property: AgentRuntimeSettingProperty) => {
-      const lowerKey = key.toLowerCase();
-      const lowerTitle = (property.title || '').toLowerCase();
-      if (lowerKey.includes('browser') || lowerTitle.includes('browser'))
-        return <TbBrowser className="w-4 h-4" />;
-      if (lowerKey.includes('search')) return <TbSearch className="w-4 h-4" />;
-      if (lowerKey.includes('research')) return <TbBook className="w-4 h-4" />;
-      if (lowerKey.includes('foo')) return <TbBulb className="w-4 h-4" />;
-      if (lowerKey.includes('thinking')) return <TbBrain className="w-4 h-4" />;
-      return <TbSettings className="w-4 h-4" />;
+      return getAgentOptionIcon(key, property);
     };
 
     const renderOptionItem = (config: AgentOptionConfig) => {
@@ -512,8 +511,8 @@ export const AgentOptionsSelector = forwardRef<AgentOptionsSelectorRef, AgentOpt
 
         // Use DropdownItem with submenu for enum options to match layout
         return (
-          <DropdownSubMenu 
-            key={key} 
+          <DropdownSubMenu
+            key={key}
             trigger={
               <DropdownItem
                 icon={getOptionIcon(key, property)}
@@ -532,7 +531,7 @@ export const AgentOptionsSelector = forwardRef<AgentOptionsSelectorRef, AgentOpt
                   </div>
                 </div>
               </DropdownItem>
-            } 
+            }
             disabled={isOptionLoading}
           >
             {submenuItems}
@@ -555,7 +554,11 @@ export const AgentOptionsSelector = forwardRef<AgentOptionsSelectorRef, AgentOpt
             }`}
             title={loadingOptions.size > 0 ? 'Updating agent options...' : 'Options'}
           >
-            {loadingOptions.size > 0 ? <FiLoader size={16} className="animate-spin" /> : <FiPlus size={16} />}
+            {loadingOptions.size > 0 ? (
+              <FiLoader size={16} className="animate-spin" />
+            ) : (
+              <FiPlus size={16} />
+            )}
           </button>
         }
       >
