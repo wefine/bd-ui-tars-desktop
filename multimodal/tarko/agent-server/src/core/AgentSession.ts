@@ -70,6 +70,7 @@ export class AgentSession {
   private agioProvider?: AgioEvent.AgioProvider;
   private agioProviderConstructor?: AgioProviderConstructor;
   private sessionInfo?: SessionInfo;
+  private storageUnsubscribeMap = new WeakMap<IAgent, () => void>();
 
   /**
    * Create event handler for storage and AGIO processing
@@ -97,25 +98,6 @@ export class AgentSession {
   }
 
   /**
-   * Setup event stream connections for storage and client communication
-   */
-  private setupEventStreams() {
-    const agentEventStream = this.agent.getEventStream();
-    const handleEvent = this.createEventHandler();
-
-    // Subscribe to events for storage and AGIO processing
-    const storageUnsubscribe = agentEventStream.subscribe(handleEvent);
-
-    // Connect to event bridge for client communication
-    if (this.unsubscribe) {
-      this.unsubscribe();
-    }
-    this.unsubscribe = this.eventBridge.connectToAgentEventStream(agentEventStream);
-
-    return { storageUnsubscribe };
-  }
-
-  /**
    * Create and initialize a complete agent instance with all wrappers and configuration
    */
   private async createAndInitializeAgent(sessionInfo?: SessionInfo): Promise<IAgent> {
@@ -135,13 +117,13 @@ export class AgentSession {
       ...this.server.appConfig,
       name: this.server.getCurrentAgentName(),
       model: this.resolveModelConfig(sessionInfo),
-      initialEvents: storedEvents, // 🎯 Pass initial events directly to agent
+      initialEvents: storedEvents, // Pass initial events directly to agent
     };
 
     // Apply runtime settings transformation if available
     const runtimeSettingsConfig = this.server.appConfig?.server?.runtimeSettings;
     let transformedOptions = sessionInfo?.metadata?.runtimeSettings ?? {};
-    
+
     if (runtimeSettingsConfig?.transform && sessionInfo?.metadata?.runtimeSettings) {
       try {
         transformedOptions = runtimeSettingsConfig.transform(sessionInfo.metadata.runtimeSettings);
@@ -163,7 +145,22 @@ export class AgentSession {
     // Apply snapshot wrapper if enabled
     const wrappedAgent = this.createAgentWithSnapshot(baseAgent, this.id);
 
+    // 🎯 Setup event stream connections BEFORE agent initialization
+    // This ensures that any events emitted during initialize() are properly persisted
+    const agentEventStream = wrappedAgent.getEventStream();
+    const handleEvent = this.createEventHandler();
+
+    // Subscribe to events for storage and AGIO processing before initialization
+    const storageUnsubscribe = agentEventStream.subscribe(handleEvent);
+
+    // Connect to event bridge for client communication before initialization
+    if (this.unsubscribe) {
+      this.unsubscribe();
+    }
+    this.unsubscribe = this.eventBridge.connectToAgentEventStream(agentEventStream);
+
     // Initialize the agent (this will automatically restore events)
+    // Now any events emitted during initialize() will be properly persisted
     await wrappedAgent.initialize();
 
     // Initialize AGIO collector if provider URL is configured
@@ -186,8 +183,11 @@ export class AgentSession {
       console.debug('AGIO collector initialized', { provider: agentOptions.agio.provider });
     }
 
-    // Log agent configuration
-    console.info('Agent Config', JSON.stringify((wrappedAgent as any).getOptions?.(), null, 2));
+    console.info('Agent Config', JSON.stringify(wrappedAgent.getOptions(), null, 2));
+
+    // Store the storage unsubscribe function for later cleanup
+    // We'll use a WeakMap to avoid polluting the agent object
+    this.storageUnsubscribeMap.set(wrappedAgent, storageUnsubscribe);
 
     return wrappedAgent;
   }
@@ -271,10 +271,14 @@ export class AgentSession {
 
   async initialize() {
     // Create and initialize agent with all wrappers
+    // Event streams are now set up within createAndInitializeAgent before agent.initialize()
     this.agent = await this.createAndInitializeAgent(this.sessionInfo);
 
-    // Setup event stream connections
-    const { storageUnsubscribe } = this.setupEventStreams();
+    // Extract the storage unsubscribe function from our WeakMap
+    const storageUnsubscribe = this.storageUnsubscribeMap.get(this.agent);
+
+    // Clean up the WeakMap entry
+    this.storageUnsubscribeMap.delete(this.agent);
 
     // Notify client that session is ready
     this.eventBridge.emit('ready', { sessionId: this.id });
@@ -504,10 +508,8 @@ export class AgentSession {
       }
 
       // Create and initialize new agent with updated session info
+      // Event streams are automatically set up within createAndInitializeAgent
       this.agent = await this.createAndInitializeAgent(sessionInfo);
-
-      // Reconnect event streams
-      this.setupEventStreams();
     } catch (error) {
       console.error('Failed to recreate agent for session', { sessionId: this.id, error });
       throw error;
