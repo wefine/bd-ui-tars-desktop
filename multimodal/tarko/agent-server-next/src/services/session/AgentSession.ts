@@ -73,6 +73,46 @@ export class AgentSession {
   private agioProviderConstructor?: AgioProviderConstructor;
   public sessionInfo?: SessionInfo;
   private logger: ILogger;
+  private storageUnsubscribeMap = new WeakMap<IAgent, () => void>();
+  private pendingEventSaves = new Set<Promise<void>>();
+
+
+  constructor(
+    private server: AgentServer,
+    sessionId: string,
+    agioProviderImpl?: AgioProviderConstructor,
+    sessionInfo?: SessionInfo,
+    private agentOptions?: Record<string, any>, // One-time agent initialization options
+  ) {
+    this.id = sessionId;
+    this.eventBridge = new EventStreamBridge();
+    this.sessionInfo = sessionInfo;
+    this.agioProviderConstructor = agioProviderImpl;
+    this.logger = getLogger('AgentSession');
+
+    // Agent will be created and initialized in initialize() method
+    this.agent = null as any; // Temporary placeholder
+  }
+
+
+  async initialize() {
+    // Create and initialize agent with all wrappers
+    // Event streams are now set up within createAndInitializeAgent before agent.initialize()
+    this.agent = await this.createAndInitializeAgent(this.sessionInfo);
+
+    // Extract the storage unsubscribe function from our WeakMap
+    const storageUnsubscribe = this.storageUnsubscribeMap.get(this.agent);
+
+    // Clean up the WeakMap entry
+    this.storageUnsubscribeMap.delete(this.agent);
+
+    // Notify client that session is ready
+    this.eventBridge.emit('ready', { sessionId: this.id });
+
+    return { storageUnsubscribe };
+  }
+
+
   /**
    * Create event handler for storage and AGIO processing
    */
@@ -80,11 +120,15 @@ export class AgentSession {
     return async (event: AgentEventStream.Event) => {
       // Save to storage if available and event should be stored
       if (shouldStoreEvent(event)) {
-        try {
-          await this.server.daoFactory.saveEvent(this.id, event);
-        } catch (error) {
-          console.error(`Failed to save event to storage: ${error}`);
-        }
+        const savePromise = this.server.daoFactory.saveEvent(this.id, event)
+          .catch(error => {
+            console.error(`Failed to save event to storage: ${error}`);
+          })
+          .finally(() => {
+            this.pendingEventSaves.delete(savePromise);
+          });
+        
+        this.pendingEventSaves.add(savePromise);
       }
 
       // Process AGIO events if collector is configured
@@ -98,23 +142,14 @@ export class AgentSession {
     };
   }
 
-  /**
-   * Setup event stream connections for storage and client communication
+    /**
+   * Wait for all pending event saves to complete
+   * This ensures that all events emitted during initialization are persisted before querying storage
    */
-  private setupEventStreams() {
-    const agentEventStream = this.agent.getEventStream();
-    const handleEvent = this.createEventHandler();
-
-    // Subscribe to events for storage and AGIO processing
-    const storageUnsubscribe = agentEventStream.subscribe(handleEvent);
-
-    // Connect to event bridge for client communication
-    if (this.unsubscribe) {
-      this.unsubscribe();
+  async waitForEventSavesToComplete(): Promise<void> {
+    if (this.pendingEventSaves.size > 0) {
+      await Promise.all(Array.from(this.pendingEventSaves));
     }
-    this.unsubscribe = this.eventBridge.connectToAgentEventStream(agentEventStream);
-
-    return { storageUnsubscribe };
   }
 
   /**
@@ -138,7 +173,7 @@ export class AgentSession {
       name: this.server.getCurrentAgentName(),
       model: this.resolveModelConfig(sessionInfo),
       sandboxUrl: sessionInfo?.metadata?.sandboxUrl,
-      initialEvents: storedEvents, // 🎯 Pass initial events directly to agent
+      initialEvents: storedEvents, // Pass initial events directly to agent
     };
 
     // Apply runtime settings transformation if available
@@ -166,7 +201,23 @@ export class AgentSession {
     // Apply snapshot wrapper if enabled
     const wrappedAgent = this.createAgentWithSnapshot(baseAgent, this.id);
 
+
+    // 🎯 Setup event stream connections BEFORE agent initialization
+    // This ensures that any events emitted during initialize() are properly persisted
+    const agentEventStream = wrappedAgent.getEventStream();
+    const handleEvent = this.createEventHandler();
+
+    // Subscribe to events for storage and AGIO processing before initialization
+    const storageUnsubscribe = agentEventStream.subscribe(handleEvent);
+
+    // Connect to event bridge for client communication before initialization
+    if (this.unsubscribe) {
+      this.unsubscribe();
+    }
+    this.unsubscribe = this.eventBridge.connectToAgentEventStream(agentEventStream);
+
     // Initialize the agent (this will automatically restore events)
+    // Now any events emitted during initialize() will be properly persisted
     await wrappedAgent.initialize();
 
     // Initialize AGIO collector if provider URL is configured
@@ -265,22 +316,6 @@ export class AgentSession {
     return baseAgent;
   }
 
-  constructor(
-    private server: AgentServer,
-    sessionId: string,
-    agioProviderImpl?: AgioProviderConstructor,
-    sessionInfo?: SessionInfo,
-    private agentOptions?: Record<string, any>, // One-time agent initialization options
-  ) {
-    this.id = sessionId;
-    this.eventBridge = new EventStreamBridge();
-    this.sessionInfo = sessionInfo;
-    this.agioProviderConstructor = agioProviderImpl;
-    this.logger = getLogger('AgentSession');
-
-    // Agent will be created and initialized in initialize() method
-    this.agent = null as any; // Temporary placeholder
-  }
 
   /**
    * Get the current processing status of the agent
@@ -288,19 +323,6 @@ export class AgentSession {
    */
   getProcessingStatus(): boolean {
     return this.agent.status() === AgentStatus.EXECUTING;
-  }
-
-  async initialize() {
-    // Create and initialize agent with all wrappers
-    this.agent = await this.createAndInitializeAgent(this.sessionInfo);
-
-    // Setup event stream connections
-    const { storageUnsubscribe } = this.setupEventStreams();
-
-    // Notify client that session is ready
-    this.eventBridge.emit('ready', { sessionId: this.id });
-
-    return { storageUnsubscribe };
   }
 
   /**
@@ -522,9 +544,6 @@ export class AgentSession {
 
       // Create and initialize new agent with updated session info
       this.agent = await this.createAndInitializeAgent(sessionInfo);
-
-      // Reconnect event streams
-      this.setupEventStreams();
     } catch (error) {
       console.error('Failed to recreate agent for session', { sessionId: this.id, error });
       throw error;
