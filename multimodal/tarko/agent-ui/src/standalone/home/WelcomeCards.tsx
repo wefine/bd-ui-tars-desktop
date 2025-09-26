@@ -45,11 +45,21 @@ const WelcomeCards: React.FC<WelcomeCardsProps> = ({
     setLoadingCardId(cardId);
 
     try {
-      // Navigate to creating page with card-specific agent options
+      // Set runtime settings based on card category
+      const runtimeSettings: Record<string, unknown> = {};
+      // If activeCategory is "Game", set agentMode to "game"
+      if (activeCategory === 'Game') {
+        runtimeSettings.agentMode = 'game';
+      }
+      // For other categories, use default values (omni mode)
+      // The default value will be applied by the system if not specified
+
+      // Navigate to creating page with card-specific agent options and runtime settings
       navigate('/creating', {
         state: {
           ...(card.prompt && { query: card.prompt }),
           agentOptions: card.agentOptions || {},
+          ...(Object.keys(runtimeSettings).length > 0 && { runtimeSettings }),
         },
       });
     } catch (error) {
@@ -138,7 +148,11 @@ const WelcomeCards: React.FC<WelcomeCardsProps> = ({
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -20 }}
           transition={{ duration: 0.3 }}
-          className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"
+          className={`grid justify-center ${
+            activeCategory === 'Game'
+              ? 'grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 max-w-4xl mx-auto'
+              : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6'
+          }`}
         >
           {activeCards.map((card, index) => {
             const cardId = `${card.category}-${card.title}`;
@@ -169,7 +183,11 @@ const WelcomeCards: React.FC<WelcomeCardsProps> = ({
                 }`}
               >
                 {/* 主卡片容器 */}
-                <div className="relative h-64 rounded-2xl overflow-hidden bg-white dark:bg-black/10 backdrop-blur-sm border border-gray-200/40 dark:border-white/5 transition-all duration-300 group-hover:border-gray-300/60 dark:group-hover:border-white/10 shadow-lg dark:shadow-none group-hover:shadow-xl dark:group-hover:shadow-none">
+                <div
+                  className={`relative rounded-2xl overflow-hidden bg-white dark:bg-black/10 backdrop-blur-sm border border-gray-200/40 dark:border-white/5 transition-all duration-300 group-hover:border-gray-300/60 dark:group-hover:border-white/10 shadow-lg dark:shadow-none group-hover:shadow-xl dark:group-hover:shadow-none ${
+                    card.category === 'Game' ? 'h-32 aspect-square' : 'h-64'
+                  }`}
+                >
                   {/* 背景层 */}
                   <div className="absolute inset-0">
                     {card.image ? (
