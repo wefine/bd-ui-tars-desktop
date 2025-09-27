@@ -22,7 +22,7 @@ export const Tooltip: React.FC<TooltipProps> = ({
   placement = 'bottom',
   children,
   className,
-  maxWidth = '300px',
+  maxWidth = '400px',
 }) => {
   const [isVisible, setIsVisible] = useState(false);
   const [position, setPosition] = useState({ top: 0, left: 0 });
@@ -89,6 +89,13 @@ export const Tooltip: React.FC<TooltipProps> = ({
   };
 
   const getTooltipStyle = (): React.CSSProperties => {
+    const titleLength = typeof title === 'string' ? title.length : 0;
+
+    // Linear minWidth calculation: 150px + (titleLength - 20) * 3px per character
+    // Min: 150px (for 20+ chars), Max: 450px (for 120+ chars)
+    const dynamicMinWidth =
+      titleLength < 20 ? 'auto' : `${Math.min(150 + (titleLength - 20) * 3, 450)}px`;
+
     const baseStyle: React.CSSProperties = {
       position: 'fixed',
       top: position.top,
@@ -96,13 +103,15 @@ export const Tooltip: React.FC<TooltipProps> = ({
       backgroundColor: '#000000',
       color: '#ffffff',
       fontSize: '12px',
-      padding: '6px 10px',
+      padding: '8px 12px',
       borderRadius: '6px',
       zIndex: 9999,
       pointerEvents: 'none',
       maxWidth,
-      wordWrap: 'break-word',
+      minWidth: dynamicMinWidth,
+      width: 'auto',
       whiteSpace: 'normal',
+      lineHeight: '1.4',
       opacity: isVisible ? 1 : 0,
       transition: 'opacity 150ms ease-in-out',
       boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
