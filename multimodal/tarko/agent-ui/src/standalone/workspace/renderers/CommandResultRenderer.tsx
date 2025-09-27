@@ -98,14 +98,13 @@ export const CommandResultRenderer: React.FC<CommandResultRendererProps> = ({ pa
   // Extract command data from panelContent
   const commandData = extractCommandData(panelContent);
 
-  if (!commandData) {
-    return <div className="text-gray-500 italic">Command result is empty</div>;
-  }
-
-  const { command, stdout, stderr, exitCode } = commandData;
-
-  // Exit code styling
-  const isError = exitCode !== 0 && exitCode !== undefined;
+  // Always show terminal UI, even for empty results
+  const { command, stdout, stderr, exitCode } = commandData || {
+    command: panelContent.arguments?.command,
+    stdout: 'Command result is empty',
+    stderr: undefined,
+    exitCode: undefined,
+  };
 
   return (
     <div className="space-y-4 md:text-base text-sm">
