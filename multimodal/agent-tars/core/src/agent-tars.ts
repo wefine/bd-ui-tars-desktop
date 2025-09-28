@@ -21,6 +21,7 @@ import { AgentWebUIImplementation } from '@agent-tars/interface';
 import { AgentTARSLocalEnvironment, AgentTARSAIOEnvironment } from './environments';
 import { AgentTARSBaseEnvironment } from './environments/base';
 import { ToolLogger } from './utils';
+import { AGENT_TARS_WEBUI_CONFIG } from './webui-config';
 
 /**
  * AgentTARS - A multimodal AI agent with browser, filesystem, and search capabilities
@@ -34,28 +35,7 @@ export class AgentTARS<T extends AgentTARSOptions = AgentTARSOptions> extends MC
   /**
    * Default Agent UI Configuration for Agent TARS
    */
-  static webuiConfig: AgentWebUIImplementation = {
-    logo: 'https://lf3-static.bytednsdoc.com/obj/eden-cn/zyha-aulnh/ljhwZthlaukjlkulzlp/appicon.png',
-    title: 'Agent TARS',
-    subtitle: 'Offering seamless integration with a wide range of real-world tools.',
-    welcomTitle: 'A multimodal AI agent',
-    welcomePrompts: [
-      'Search for the latest GUI Agent papers',
-      'Find information about UI TARS',
-      'Tell me the top 5 most popular projects on ProductHunt today',
-      'Please book me the earliest flight from Hangzhou to Shenzhen on 10.1',
-    ],
-    enableContextualSelector: false,
-    guiAgent: {
-      defaultScreenshotRenderStrategy: 'beforeAction',
-      enableScreenshotRenderStrategySwitch: true,
-      renderGUIAction: true,
-    },
-    layout: {
-      defaultLayout: 'narrow-chat',
-      enableLayoutSwitchButton: true,
-    },
-  };
+  static webuiConfig: AgentWebUIImplementation = AGENT_TARS_WEBUI_CONFIG;
 
   // Core configuration
   private readonly workspace: string;
